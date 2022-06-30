@@ -1,6 +1,7 @@
 # git-branch-picker
 
-Switching branches is annoying when you have lots of them. This allows you to do fuzzy search for branches. It even sorts the branches by most recent commit.
+Switching branches is annoying when you have lots of them. This allows you to do
+fuzzy search for branches. It even sorts the branches by most recent commit.
 
 ## Install
 
