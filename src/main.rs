@@ -1,3 +1,5 @@
+#![feature(exit_status_error)]
+
 use anyhow::Result;
 use chrono::prelude::*;
 use chrono::Duration;
@@ -5,7 +7,10 @@ use git2::BranchType;
 use git2::Oid;
 use git2::Repository;
 use git2::StatusOptions;
+use skim::prelude::*;
+use std::io::Cursor;
 use std::process::exit;
+use std::process::Command;
 
 fn main() -> Result<()> {
     let repo = Repository::open_from_env()?;
@@ -26,7 +31,7 @@ fn is_clean(repo: &Repository) -> Result<bool> {
     let mut options = StatusOptions::default();
     options.include_ignored(false);
     let statuses = repo.statuses(Some(&mut options))?;
-    Ok(statuses.len() == 0)
+    Ok(statuses.is_empty())
 }
 
 fn find_branches(repo: &Repository) -> Result<Vec<ListBranch>> {
@@ -41,7 +46,7 @@ fn find_branches(repo: &Repository) -> Result<Vec<ListBranch>> {
 
             let time = commit.time();
             let offset = Duration::minutes(i64::from(time.offset_minutes()));
-            let time = NaiveDateTime::from_timestamp(time.seconds(), 0) + offset;
+            let time = NaiveDateTime::from_timestamp_opt(time.seconds(), 0).unwrap() + offset;
 
             Ok(ListBranch {
                 name: name.to_string(),
@@ -58,15 +63,12 @@ fn find_branches(repo: &Repository) -> Result<Vec<ListBranch>> {
 #[derive(Debug)]
 struct ListBranch {
     name: String,
+    #[allow(dead_code)]
     id: Oid,
     time: NaiveDateTime,
 }
 
 fn pick_branch(branches: Vec<ListBranch>) -> Result<ListBranch> {
-    use skim::prelude::*;
-    use std::io::Cursor;
-    use std::iter::repeat;
-
     let branch_len = branches
         .iter()
         .map(|branch| branch.name.len())
@@ -105,13 +107,9 @@ fn pick_branch(branches: Vec<ListBranch>) -> Result<ListBranch> {
         .iter()
         .zip(delta_humans.into_iter())
         .map(|(branch, delta_human)| {
-            let branch_padding = repeat(' ')
-                .take(branch_len.checked_sub(branch.name.len()).unwrap_or(0))
-                .collect::<String>();
+            let branch_padding = " ".repeat(branch_len.saturating_sub(branch.name.len()));
 
-            let delta_padding = repeat(' ')
-                .take(delta_human_len.checked_sub(delta_human.len()).unwrap_or(0))
-                .collect::<String>();
+            let delta_padding = " ".repeat(delta_human_len.saturating_sub(delta_human.len()));
 
             Ok(format!(
                 "{}{} | {}{} ({})",
@@ -128,7 +126,7 @@ fn pick_branch(branches: Vec<ListBranch>) -> Result<ListBranch> {
 
     let selected_items = Skim::run_with(&options, Some(items))
         .map(|out| out.selected_items)
-        .unwrap_or_else(|| Vec::new());
+        .unwrap_or_else(Vec::new);
 
     let picked_branch = selected_items
         .into_iter()
@@ -148,10 +146,10 @@ fn pick_branch(branches: Vec<ListBranch>) -> Result<ListBranch> {
     Ok(branch)
 }
 
-fn checkout_branch(repo: Repository, branch_name: &str) -> Result<()> {
-    let obj = repo.revparse_single(&("refs/heads/".to_owned() + branch_name))?;
-    repo.checkout_tree(&obj, None)?;
-    repo.set_head(&("refs/heads/".to_owned() + branch_name))?;
+fn checkout_branch(_repo: Repository, branch_name: &str) -> Result<()> {
+    let mut cmd = Command::new("git");
+    cmd.args(["checkout", branch_name]);
+    cmd.spawn()?.wait()?.exit_ok()?;
 
     Ok(())
 }
