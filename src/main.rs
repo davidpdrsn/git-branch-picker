@@ -138,9 +138,11 @@ fn pick_branch(branches: Vec<ListBranch>) -> Result<ListBranch> {
         .text()
         .to_string();
 
+    let le_branch = picked_branch.split(' ').next().unwrap();
+
     let branch = branches
         .into_iter()
-        .find(|branch| picked_branch.starts_with(&branch.name))
+        .find(|branch| le_branch == branch.name)
         .expect("No matching branch");
 
     Ok(branch)
