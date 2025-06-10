@@ -1,8 +1,7 @@
-#![feature(exit_status_error)]
-
 use anyhow::Result;
 use chrono::prelude::*;
 use chrono::Duration;
+use clap::{Parser, Subcommand};
 use git2::BranchType;
 use git2::Oid;
 use git2::Repository;
@@ -12,6 +11,18 @@ use std::io::Cursor;
 use std::process::exit;
 use std::process::Command;
 
+#[derive(Parser, Debug)]
+struct Cli {
+    #[command(subcommand)]
+    command: SubCli,
+}
+
+#[derive(Subcommand, Debug)]
+enum SubCli {
+    Checkout,
+    Merge,
+}
+
 fn main() -> Result<()> {
     let repo = Repository::open_from_env()?;
 
@@ -20,9 +31,12 @@ fn main() -> Result<()> {
         exit(1);
     }
 
-    let branches = find_branches(&repo)?;
-    let branch = pick_branch(branches)?;
-    checkout_branch(repo, &branch.name)?;
+    let cli = Cli::parse();
+
+    match cli.command {
+        SubCli::Checkout => checkout(repo)?,
+        SubCli::Merge => merge(repo)?,
+    }
 
     Ok(())
 }
@@ -32,6 +46,25 @@ fn is_clean(repo: &Repository) -> Result<bool> {
     options.include_ignored(false);
     let statuses = repo.statuses(Some(&mut options))?;
     Ok(statuses.is_empty())
+}
+
+fn checkout(repo: Repository) -> Result<()> {
+    let branches = find_branches(&repo)?;
+    let branch = pick_branch(branches)?;
+    checkout_branch(repo, &branch.name)?;
+
+    Ok(())
+}
+
+fn merge(repo: Repository) -> Result<()> {
+    let branches = find_branches(&repo)?;
+    let branch = pick_branch(branches)?;
+
+    let mut cmd = Command::new("git");
+    cmd.args(["merge", &branch.name]);
+    anyhow::ensure!(cmd.spawn()?.wait()?.success());
+
+    Ok(())
 }
 
 fn find_branches(repo: &Repository) -> Result<Vec<ListBranch>> {
@@ -122,11 +155,16 @@ fn pick_branch(branches: Vec<ListBranch>) -> Result<ListBranch> {
     let item_reader = SkimItemReader::default();
     let items = item_reader.of_bufread(Cursor::new(input));
 
-    let options = SkimOptionsBuilder::default().build().unwrap();
+    let options = SkimOptionsBuilder::default()
+        .height("30".to_owned())
+        .reverse(true)
+        .ansi(true)
+        .build()
+        .unwrap();
 
     let selected_items = Skim::run_with(&options, Some(items))
         .map(|out| out.selected_items)
-        .unwrap_or_else(Vec::new);
+        .unwrap_or_default();
 
     let picked_branch = selected_items
         .into_iter()
@@ -151,7 +189,7 @@ fn pick_branch(branches: Vec<ListBranch>) -> Result<ListBranch> {
 fn checkout_branch(_repo: Repository, branch_name: &str) -> Result<()> {
     let mut cmd = Command::new("git");
     cmd.args(["checkout", branch_name]);
-    cmd.spawn()?.wait()?.exit_ok()?;
+    anyhow::ensure!(cmd.spawn()?.wait()?.success());
 
     Ok(())
 }

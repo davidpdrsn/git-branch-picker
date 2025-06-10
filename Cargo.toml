@@ -7,5 +7,6 @@ edition = "2018"
 [dependencies]
 anyhow = "1.0.69"
 chrono = "0.4.23"
+clap = { version = "4.5.21", features = ["derive"] }
 git2 = { version = "0.16.1", default_features = false }
-skim = "0.10.2"
+skim = "0.18"
